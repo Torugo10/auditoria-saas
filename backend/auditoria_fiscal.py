@@ -722,7 +722,7 @@ if not st.session_state.autenticado:
                         acao='LOGIN_SUCESSO'
                     )
                     
-                    st.rerun()
+                    
                 else:
                     st.error("❌ Credenciais inválidas ou conta bloqueada")
                     registrar_log(0, 'desconhecido', '', 'LOGIN_FALHA', f'Usuário: {usuario}')
@@ -1624,7 +1624,7 @@ def app_painel_gerente():
                         sucesso, mensagem = bloquear_usuario_subordinado(st.session_state.usuario_id, usuario_id)
                         if sucesso:
                             st.toast(mensagem, icon="🔒")
-                            st.rerun()
+                            
                         else:
                             st.error(mensagem)
                     else:
@@ -1636,7 +1636,7 @@ def app_painel_gerente():
                         sucesso, mensagem = desbloquear_usuario_subordinado(st.session_state.usuario_id, usuario_id)
                         if sucesso:
                             st.toast(mensagem, icon="🔓")
-                            st.rerun()
+                            
                         else:
                             st.error(mensagem)
                     else:
@@ -1690,7 +1690,7 @@ def app_painel_gerente():
                             registrar_log(st.session_state.usuario_id, 'gerente', 
                                         st.session_state.cnpj_cpf, 'SENHA_SUBORDINADO_ALTERADA',
                                         f'Gerente alterou senha de {login} (ID {usuario_id})')
-                            st.rerun()
+                            
                         except Exception as e:
                             st.error(f"❌ Erro: {str(e)}")
         else:
@@ -1891,7 +1891,7 @@ def app_painel_admin():
                             st.toast(f"✅ Gerente '{login}' bloqueado!", icon="🔒")
                             registrar_log(st.session_state.usuario_id, 'admin', '', 'GERENTE_BLOQUEADO',
                                         f"Gerente {login} (ID {usuario_id}) bloqueado")
-                            st.rerun()
+                            
                         else:
                             st.warning("⚠️ Já está bloqueado!")
                 
@@ -1906,7 +1906,7 @@ def app_painel_admin():
                             st.toast(f"✅ Gerente '{login}' desbloqueado!", icon="🔓")
                             registrar_log(st.session_state.usuario_id, 'admin', '', 'GERENTE_DESBLOQUEADO',
                                         f"Gerente {login} (ID {usuario_id}) desbloqueado")
-                            st.rerun()
+                            
                         else:
                             st.warning("⚠️ Já está desbloqueado!")
         
@@ -1940,7 +1940,7 @@ def app_painel_admin():
                             st.toast(f"✅ Usuário '{login}' bloqueado!", icon="🔒")
                             registrar_log(st.session_state.usuario_id, 'admin', '', 'USUARIO_BLOQUEADO',
                                         f"Usuário {login} (ID {usuario_id}) bloqueado")
-                            st.rerun()
+                            
                         else:
                             st.warning("⚠️ Já está bloqueado!")
                 
@@ -1955,7 +1955,7 @@ def app_painel_admin():
                             st.toast(f"✅ Usuário '{login}' desbloqueado!", icon="🔓")
                             registrar_log(st.session_state.usuario_id, 'admin', '', 'USUARIO_DESBLOQUEADO',
                                         f"Usuário {login} (ID {usuario_id}) desbloqueado")
-                            st.rerun()
+                            
                         else:
                             st.warning("⚠️ Já está desbloqueado!")
     
@@ -1996,7 +1996,7 @@ def app_painel_admin():
                         st.toast(f"✅ Gerente '{login}' e subordinados excluídos!", icon="🗑️")
                         registrar_log(st.session_state.usuario_id, 'admin', '', 'GERENTE_EXCLUIDO',
                                     f"Gerente {login} (ID {usuario_id}) excluído permanentemente")
-                        st.rerun()
+                        
                     else:
                         st.error("❌ Confirmação incorreta!")
         
@@ -2030,7 +2030,7 @@ def app_painel_admin():
                         st.toast(f"✅ Usuário '{login}' excluído!", icon="🗑️")
                         registrar_log(st.session_state.usuario_id, 'admin', '', 'USUARIO_EXCLUIDO',
                                     f"Usuário {login} (ID {usuario_id}) excluído permanentemente")
-                        st.rerun()
+                        
                     else:
                         st.error("❌ Confirmação incorreta!")
     
@@ -2158,7 +2158,7 @@ def app_painel_admin():
                                 registrar_log(st.session_state.usuario_id, 'admin', '', 
                                             'CONTA_RECORRENTE_CRIADA',
                                             f'Valor: R$ {valor_fixo:.2f} - Dia: {int(dia_vencimento)}')
-                                st.rerun()
+                                
                             else:
                                 st.error(mensagem)
             
@@ -2208,7 +2208,7 @@ def app_painel_admin():
                         
                         if sucesso:
                             st.toast(mensagem, icon="⏸️")
-                            st.rerun()
+                            
                         else:
                             st.error(mensagem)
                 else:
@@ -2357,7 +2357,7 @@ def app_painel_admin():
                                                 sucesso, msg = responder_ticket(row['id'], resposta, st.session_state.usuario_id)
                                                 if sucesso:
                                                     st.success(msg)
-                                                    st.rerun()
+                                                    
                                                 else:
                                                     st.error(msg)
                                             else:
@@ -2370,7 +2370,7 @@ def app_painel_admin():
                                                 if sucesso:
                                                     sucesso2, msg2 = fechar_ticket(row['id'], st.session_state.usuario_id)
                                                     st.success(f"{msg}\n{msg2}")
-                                                    st.rerun()
+                                                    
                                                 else:
                                                     st.error(msg)
                                             else:
@@ -2381,7 +2381,7 @@ def app_painel_admin():
                                             sucesso, msg = fechar_ticket(row['id'], st.session_state.usuario_id)
                                             if sucesso:
                                                 st.success(msg)
-                                                st.rerun()
+                                                
                                             else:
                                                 st.error(msg)
                 else:
@@ -2572,7 +2572,7 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.session_state.tipo_usuario = None
     st.session_state.cnpj_cpf = None
     st.session_state.usuario_id = None
-    st.rerun()
+    
 
 st.sidebar.caption("🔒 Protegido")
 
