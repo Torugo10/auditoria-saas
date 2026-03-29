@@ -1,4 +1,8 @@
 {
-  "buildCommand": "pip install -r backend/requirements.txt",
-  "startCommand": "streamlit run backend/app.py --server.port=$PORT --server.address=0.0.0.0"
+  "build": {
+    "builder": "dockerfile"
+  },
+  "deploy": {
+    "startCommand": "streamlit run backend/auditoria_fiscal.py --server.port=$PORT --server.address=0.0.0.0"
+  }
 }
