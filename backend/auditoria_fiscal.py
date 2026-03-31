@@ -32,6 +32,158 @@ if 'autenticado' not in st.session_state:
     st.session_state.usuario_id = None
 
 # 
+# 🗄️ INICIALIZAÇÃO DO BANCO DE DADOS
+# 
+
+def inicializar_banco_dados():
+    """Cria o banco de dados e todas as tabelas necessárias caso não existam.
+    Deve ser chamada antes de qualquer outra operação de banco de dados."""
+    try:
+        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        c = conn.cursor()
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS administradores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            login TEXT UNIQUE NOT NULL,
+            senha_hash TEXT NOT NULL,
+            email TEXT,
+            nome_completo TEXT,
+            ativo INTEGER DEFAULT 1,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS gerentes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER NOT NULL,
+            login TEXT UNIQUE NOT NULL,
+            senha_hash TEXT NOT NULL,
+            email TEXT,
+            cnpj_cpf TEXT,
+            nome_completo TEXT,
+            ativo INTEGER DEFAULT 1,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(admin_id) REFERENCES administradores(id)
+        )
+        ''')
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios_finais (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            gerente_id INTEGER NOT NULL,
+            admin_id INTEGER,
+            login TEXT UNIQUE NOT NULL,
+            senha_hash TEXT NOT NULL,
+            email TEXT,
+            cnpj_cpf TEXT,
+            nome_completo TEXT,
+            perfil TEXT DEFAULT 'usuario_final',
+            ativo INTEGER DEFAULT 1,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(gerente_id) REFERENCES gerentes(id)
+        )
+        ''')
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS contas_receber (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER,
+            cnpj_cpf TEXT,
+            login TEXT,
+            valor_devido REAL,
+            data_vencimento DATE,
+            status TEXT DEFAULT 'ABERTO',
+            cfop TEXT,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            recorrente_id INTEGER
+        )
+        ''')
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS contas_recorrentes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER,
+            gerente_id INTEGER,
+            cnpj_cpf_gerente TEXT,
+            usuario_id INTEGER,
+            login_usuario TEXT,
+            cnpj_cpf_usuario TEXT,
+            valor_fixo REAL NOT NULL,
+            dia_vencimento INTEGER NOT NULL,
+            descricao TEXT,
+            ativa INTEGER DEFAULT 1,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS logs_auditoria (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER,
+            tipo_usuario TEXT,
+            cnpj_cpf TEXT,
+            acao TEXT NOT NULL,
+            dados_novos TEXT,
+            dados_antigos TEXT,
+            data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS aliquotas_padrao (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cfop TEXT NOT NULL,
+            descricao TEXT,
+            aliquota_icms_esperada REAL,
+            aliquota_pis_esperada REAL,
+            aliquota_cofins_esperada REAL,
+            aliquota_ipi_esperada REAL,
+            regime TEXT DEFAULT 'Simples Nacional',
+            anexo TEXT DEFAULT 'III',
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS tickets_suporte (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            usuario_login TEXT NOT NULL,
+            usuario_email TEXT,
+            tipo_problema TEXT NOT NULL,
+            assunto TEXT NOT NULL,
+            descricao TEXT NOT NULL,
+            prioridade TEXT DEFAULT 'MEDIA',
+            status TEXT DEFAULT 'ABERTO',
+            data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            data_resposta TIMESTAMP,
+            resposta_admin TEXT,
+            admin_id INTEGER
+        )
+        ''')
+
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        return False, str(e)
+
+# Inicializar banco de dados antes de qualquer outra operação
+try:
+    resultado = inicializar_banco_dados()
+    if resultado is not True:
+        _, erro = resultado
+        st.error(f"❌ Não foi possível inicializar o banco de dados: {erro}")
+        st.info("Por favor, verifique as permissões de escrita no diretório da aplicação e tente novamente.")
+        st.stop()
+except Exception as _db_init_error:
+    st.error(f"❌ Erro crítico ao inicializar o banco de dados: {str(_db_init_error)}")
+    st.info("Por favor, verifique as permissões de escrita no diretório da aplicação e tente novamente.")
+    st.stop()
+
+# 
 # 🔐 FUNÇÕES DE AUTENTICAÇÃO
 # 
 
