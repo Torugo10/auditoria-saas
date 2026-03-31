@@ -1,8 +1,5 @@
 {
   "build": {
     "builder": "dockerfile"
-  },
-  "deploy": {
-    "CMD ["streamlit", "run", "backend/auditoria_fiscal.py", "--server.port=8501", "--server.address=0.0.0.0"]"
   }
 }
