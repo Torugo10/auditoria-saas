@@ -5,6 +5,9 @@
 # Data: 19/03/2026
 # 
 
+import sys
+print("✅ Module loading started", file=sys.stderr, flush=True)
+
 import os
 import streamlit as st
 import pandas as pd
@@ -18,19 +21,16 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Database path configuration for Railway
-DB_PATH = os.getenv('DATABASE_PATH', '/tmp/auditoria_multi_tenant.db')
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-
 # 
 # 🔐 CONFIGURAÇÃO INICIAL
 # 
 
 st.set_page_config(page_title="Auditoria Contábil Pro", layout="wide", page_icon="📊")
+print("✅ Streamlit configured", file=sys.stderr, flush=True)
 
-# Early render — confirms the app reached Streamlit's execution loop.
-# Visible in the browser and proves the process is alive before DB init.
-print("✅ [STARTUP] st.set_page_config() concluído — Streamlit está respondendo.")
+# Database path configuration for Railway
+DB_PATH = os.getenv('DATABASE_PATH', '/tmp/auditoria_multi_tenant.db')
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
@@ -179,22 +179,23 @@ def inicializar_banco_dados():
     except Exception as e:
         return False, str(e)
 
-# Inicializar banco de dados antes de qualquer outra operação
-print("🚀 [STARTUP] Iniciando aplicação Auditoria Contábil Pro...")
-try:
+# Lazy DB initialization — called only when first needed (e.g. on login attempt)
+_db_initialized = False
+
+def _ensure_db_initialized():
+    """Initializes the database on first call. Safe to call multiple times."""
+    global _db_initialized
+    if _db_initialized:
+        return
+    print("🚀 [DB] Iniciando banco de dados...", file=sys.stderr, flush=True)
     _db_ok, _db_erro = inicializar_banco_dados()
     if not _db_ok:
-        print(f"❌ [STARTUP] Falha na inicialização do banco de dados: {_db_erro}")
+        print(f"❌ [DB] Falha na inicialização: {_db_erro}", file=sys.stderr, flush=True)
         st.error(f"❌ Não foi possível inicializar o banco de dados: {_db_erro}")
         st.info("Por favor, verifique as permissões de escrita no diretório da aplicação e tente novamente.")
         st.stop()
-    else:
-        print("✅ [STARTUP] Banco de dados inicializado com sucesso.")
-except Exception as _db_init_error:
-    print(f"❌ [STARTUP] Erro crítico ao inicializar o banco de dados: {str(_db_init_error)}")
-    st.error(f"❌ Erro crítico ao inicializar o banco de dados: {str(_db_init_error)}")
-    st.info("Por favor, verifique as permissões de escrita no diretório da aplicação e tente novamente.")
-    st.stop()
+    print("✅ [DB] Banco de dados inicializado com sucesso.", file=sys.stderr, flush=True)
+    _db_initialized = True
 
 # 
 # 🔐 FUNÇÕES DE AUTENTICAÇÃO
@@ -872,6 +873,7 @@ try:
                 submit = st.form_submit_button("Entrar", use_container_width=True)
                 
                 if submit:
+                    _ensure_db_initialized()
                     resultado = autenticar_usuario(usuario, senha)
                     if resultado:
                         st.session_state.autenticado = True
@@ -904,6 +906,9 @@ except Exception as _login_err:
     st.error(f"❌ Erro ao renderizar a tela de login: {str(_login_err)}")
     st.code(_login_tb, language="python")
     st.stop()
+
+# ✅ GARANTIR DB INICIALIZADO ANTES DE QUALQUER OPERAÇÃO PÓS-LOGIN
+_ensure_db_initialized()
 
 # ✅ VALIDAÇÃO FORÇADA EXECUTADA SEMPRE
 validar_sessao_ativa_forcada()
