@@ -23,6 +23,10 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Auditoria Contábil Pro", layout="wide", page_icon="📊")
 
+# Early render — confirms the app reached Streamlit's execution loop.
+# Visible in the browser and proves the process is alive before DB init.
+print("✅ [STARTUP] st.set_page_config() concluído — Streamlit está respondendo.")
+
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
     st.session_state.usuario = None
@@ -166,19 +170,23 @@ def inicializar_banco_dados():
 
         conn.commit()
         conn.close()
-        return True
+        return True, None
     except Exception as e:
         return False, str(e)
 
 # Inicializar banco de dados antes de qualquer outra operação
+print("🚀 [STARTUP] Iniciando aplicação Auditoria Contábil Pro...")
 try:
-    resultado = inicializar_banco_dados()
-    if resultado is not True:
-        _, erro = resultado
-        st.error(f"❌ Não foi possível inicializar o banco de dados: {erro}")
+    _db_ok, _db_erro = inicializar_banco_dados()
+    if not _db_ok:
+        print(f"❌ [STARTUP] Falha na inicialização do banco de dados: {_db_erro}")
+        st.error(f"❌ Não foi possível inicializar o banco de dados: {_db_erro}")
         st.info("Por favor, verifique as permissões de escrita no diretório da aplicação e tente novamente.")
         st.stop()
+    else:
+        print("✅ [STARTUP] Banco de dados inicializado com sucesso.")
 except Exception as _db_init_error:
+    print(f"❌ [STARTUP] Erro crítico ao inicializar o banco de dados: {str(_db_init_error)}")
     st.error(f"❌ Erro crítico ao inicializar o banco de dados: {str(_db_init_error)}")
     st.info("Por favor, verifique as permissões de escrita no diretório da aplicação e tente novamente.")
     st.stop()
