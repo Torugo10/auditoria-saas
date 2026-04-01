@@ -858,40 +858,51 @@ def desbloquear_usuario_subordinado(gerente_id, usuario_id):
 # 🔐 TELA DE LOGIN
 # 
 
-if not st.session_state.autenticado:
-    st.markdown("<h2 style='text-align: center;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Sistema de Auditoria Fiscal BPO</p>", 
-               unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        with st.form("login_form"):
-            usuario = st.text_input("Usuário")
-            senha = st.text_input("Senha", type="password")
-            submit = st.form_submit_button("Entrar", use_container_width=True)
-            
-            if submit:
-                resultado = autenticar_usuario(usuario, senha)
-                if resultado:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario = resultado['login']
-                    st.session_state.tipo_usuario = resultado['tipo']
-                    st.session_state.cnpj_cpf = resultado['cnpj_cpf']
-                    st.session_state.perfil = resultado.get('perfil', None)
-                    st.session_state.usuario_id = resultado['usuario_id']
-                    
-                    registrar_log(
-                        usuario_id=resultado['usuario_id'],
-                        tipo_usuario=resultado['tipo'],
-                        cnpj_cpf=resultado['cnpj_cpf'] if resultado['cnpj_cpf'] else '',
-                        acao='LOGIN_SUCESSO'
-                    )
-                    
-                    
-                else:
-                    st.error("❌ Credenciais inválidas ou conta bloqueada")
-                    registrar_log(0, 'desconhecido', '', 'LOGIN_FALHA', f'Usuário: {usuario}')
-    
+try:
+    if not st.session_state.autenticado:
+        st.markdown("<h2 style='text-align: center;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Sistema de Auditoria Fiscal BPO</p>", 
+                   unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            with st.form("login_form"):
+                usuario = st.text_input("Usuário")
+                senha = st.text_input("Senha", type="password")
+                submit = st.form_submit_button("Entrar", use_container_width=True)
+                
+                if submit:
+                    resultado = autenticar_usuario(usuario, senha)
+                    if resultado:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario = resultado['login']
+                        st.session_state.tipo_usuario = resultado['tipo']
+                        st.session_state.cnpj_cpf = resultado['cnpj_cpf']
+                        st.session_state.perfil = resultado.get('perfil', None)
+                        st.session_state.usuario_id = resultado['usuario_id']
+                        
+                        registrar_log(
+                            usuario_id=resultado['usuario_id'],
+                            tipo_usuario=resultado['tipo'],
+                            cnpj_cpf=resultado['cnpj_cpf'] if resultado['cnpj_cpf'] else '',
+                            acao='LOGIN_SUCESSO'
+                        )
+                        
+                        
+                    else:
+                        st.error("❌ Credenciais inválidas ou conta bloqueada")
+                        registrar_log(0, 'desconhecido', '', 'LOGIN_FALHA', f'Usuário: {usuario}')
+        
+        st.stop()
+except st.runtime.scriptrunner.StopException:
+    raise
+except Exception as _login_err:
+    import traceback as _tb
+    _login_tb = _tb.format_exc()
+    print(f"❌ [STARTUP] Erro na tela de login: {str(_login_err)}")
+    print(_login_tb)
+    st.error(f"❌ Erro ao renderizar a tela de login: {str(_login_err)}")
+    st.code(_login_tb, language="python")
     st.stop()
 
 # ✅ VALIDAÇÃO FORÇADA EXECUTADA SEMPRE
@@ -2712,44 +2723,54 @@ def app_painel_suporte_usuario():
 # 🔄 ROTEAMENTO PRINCIPAL
 # 
 
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/1055/1055644.png", width=60)
-st.sidebar.title("Menu")
-st.sidebar.write(f"👤 {st.session_state.usuario} ({st.session_state.tipo_usuario.upper()})")
+try:
+    st.sidebar.image("https://cdn-icons-png.flaticon.com/512/1055/1055644.png", width=60)
+    st.sidebar.title("Menu")
+    st.sidebar.write(f"👤 {st.session_state.usuario} ({st.session_state.tipo_usuario.upper()})")
 
-if st.session_state.cnpj_cpf:
-    st.sidebar.write(f"🏢 {st.session_state.cnpj_cpf}")
+    if st.session_state.cnpj_cpf:
+        st.sidebar.write(f"🏢 {st.session_state.cnpj_cpf}")
 
-if st.session_state.tipo_usuario == 'admin':
-    opcoes = ["📦 Entrada", "📦 Saída", "📄 Notas", "⚙️ Admin"]
-elif st.session_state.tipo_usuario == 'gerente':
-    opcoes = ["📦 Entrada", "📦 Saída", "📄 Notas", "👥 Gerenciar"]
-else:
-    opcoes = ["📦 Entrada", "📦 Saída", "📄 Notas", "🆘 Suporte"]
+    if st.session_state.tipo_usuario == 'admin':
+        opcoes = ["📦 Entrada", "📦 Saída", "📄 Notas", "⚙️ Admin"]
+    elif st.session_state.tipo_usuario == 'gerente':
+        opcoes = ["📦 Entrada", "📦 Saída", "📄 Notas", "👥 Gerenciar"]
+    else:
+        opcoes = ["📦 Entrada", "📦 Saída", "📄 Notas", "🆘 Suporte"]
 
-pagina = st.sidebar.radio("Navegação:", opcoes)
+    pagina = st.sidebar.radio("Navegação:", opcoes)
 
-st.sidebar.divider()
-if st.sidebar.button("🚪 Logout", use_container_width=True):
-    registrar_log(st.session_state.usuario_id, st.session_state.tipo_usuario, 
-                 st.session_state.cnpj_cpf if st.session_state.cnpj_cpf else '', 'LOGOUT')
-    st.session_state.autenticado = False
-    st.session_state.usuario = None
-    st.session_state.tipo_usuario = None
-    st.session_state.cnpj_cpf = None
-    st.session_state.usuario_id = None
-    
+    st.sidebar.divider()
+    if st.sidebar.button("🚪 Logout", use_container_width=True):
+        registrar_log(st.session_state.usuario_id, st.session_state.tipo_usuario, 
+                     st.session_state.cnpj_cpf if st.session_state.cnpj_cpf else '', 'LOGOUT')
+        st.session_state.autenticado = False
+        st.session_state.usuario = None
+        st.session_state.tipo_usuario = None
+        st.session_state.cnpj_cpf = None
+        st.session_state.usuario_id = None
+        
 
-st.sidebar.caption("🔒 Protegido")
+    st.sidebar.caption("🔒 Protegido")
 
-if pagina == "📦 Entrada":
-    app_auditoria_itens_entrada()
-elif pagina == "📦 Saída":
-    app_auditoria_itens_saida()
-elif pagina == "📄 Notas":
-    app_auditoria_notas()
-elif pagina == "⚙️ Admin":
-    app_painel_admin()
-elif pagina == "👥 Gerenciar":
-    app_painel_gerente()
-elif pagina == "🆘 Suporte":
-    app_painel_suporte_usuario()
+    if pagina == "📦 Entrada":
+        app_auditoria_itens_entrada()
+    elif pagina == "📦 Saída":
+        app_auditoria_itens_saida()
+    elif pagina == "📄 Notas":
+        app_auditoria_notas()
+    elif pagina == "⚙️ Admin":
+        app_painel_admin()
+    elif pagina == "👥 Gerenciar":
+        app_painel_gerente()
+    elif pagina == "🆘 Suporte":
+        app_painel_suporte_usuario()
+except st.runtime.scriptrunner.StopException:
+    raise
+except Exception as _route_err:
+    import traceback as _tb
+    _route_tb = _tb.format_exc()
+    print(f"❌ [RUNTIME] Erro no roteamento principal: {str(_route_err)}")
+    print(_route_tb)
+    st.error(f"❌ Erro inesperado na aplicação: {str(_route_err)}")
+    st.code(_route_tb, language="python")
