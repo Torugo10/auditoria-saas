@@ -5,6 +5,7 @@
 # Data: 19/03/2026
 # 
 
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -16,6 +17,11 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import plotly.express as px
 import plotly.graph_objects as go
+
+# Caminho do banco de dados — configurável via variável de ambiente DATABASE_PATH.
+# Padrão: /tmp (gravável no filesystem efêmero do Railway).
+DB_PATH = os.getenv('DATABASE_PATH', '/tmp/auditoria_multi_tenant.db')
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 # 
 # 🔐 CONFIGURAÇÃO INICIAL
@@ -39,7 +45,7 @@ def inicializar_banco_dados():
     """Cria o banco de dados e todas as tabelas necessárias caso não existam.
     Deve ser chamada antes de qualquer outra operação de banco de dados."""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
         c.execute('''
@@ -189,7 +195,7 @@ except Exception as _db_init_error:
 
 def autenticar_usuario(login, senha):
     """Autenticação com validação de bloqueio"""
-    conn = sqlite3.connect('auditoria_multi_tenant.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
     senha_hash = hashlib.sha256(senha.encode()).hexdigest()
@@ -243,7 +249,7 @@ def validar_sessao_ativa_forcada():
         return False
     
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         if st.session_state.tipo_usuario == 'admin':
@@ -277,7 +283,7 @@ def validar_sessao_ativa_forcada():
 def bloquear_usuarios_atrasados():
     """Bloqueio automático por atraso de pagamento (>5 dias)"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='contas_receber'")
@@ -316,7 +322,7 @@ def bloquear_usuarios_atrasados():
 def registrar_log(usuario_id, tipo_usuario, cnpj_cpf, acao, dados_novos=""):
     """Registra ação no log de auditoria"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('''
@@ -336,7 +342,7 @@ def registrar_log(usuario_id, tipo_usuario, cnpj_cpf, acao, dados_novos=""):
 def gerar_contas_mensais_recorrentes():
     """Gera automaticamente contas a receber do mês baseado em contas recorrentes"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         hoje = datetime.now().date()
@@ -394,7 +400,7 @@ def criar_conta_recorrente(admin_id, gerente_id, cnpj_cpf_gerente, usuario_id,
                           dia_vencimento, descricao=""):
     """Cria uma conta recorrente mensal fixa"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('''
@@ -428,7 +434,7 @@ def criar_conta_recorrente(admin_id, gerente_id, cnpj_cpf_gerente, usuario_id,
 def listar_contas_recorrentes(gerente_id=None, admin_id=None):
     """Lista contas recorrentes por gerente ou admin"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         
         if gerente_id:
             df = pd.read_sql_query(
@@ -457,7 +463,7 @@ def listar_contas_recorrentes(gerente_id=None, admin_id=None):
 def desativar_conta_recorrente(recorrente_id, admin_id):
     """Desativa uma conta recorrente"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('''
@@ -482,7 +488,7 @@ def desativar_conta_recorrente(recorrente_id, admin_id):
 def criar_tabelas_conformidade():
     """Cria tabelas de referência para análise tributária"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='aliquotas_padrao'")
@@ -535,7 +541,7 @@ def calcular_aliquota_efetiva(valor_base, valor_imposto):
 def analisar_conformidade_operacoes(usuario_id, periodo_inicio, periodo_fim):
     """Analisa conformidade tributária e retorna desvios e recomendações"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         analise_resultados = {
@@ -600,7 +606,7 @@ def gerar_score_conformidade(usuario_id, periodo_inicio, periodo_fim):
 def criar_tabela_tickets():
     """Cria tabela de tickets de suporte se não existir"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('''
@@ -630,7 +636,7 @@ def criar_tabela_tickets():
 def criar_ticket_suporte(usuario_id, usuario_login, usuario_email, tipo_problema, assunto, descricao, prioridade='MEDIA'):
     """Cria um novo ticket de suporte"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('''
@@ -654,7 +660,7 @@ def criar_ticket_suporte(usuario_id, usuario_login, usuario_email, tipo_problema
 def listar_meus_tickets(usuario_id):
     """Lista todos os tickets do usuário"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query(
             '''SELECT id, tipo_problema, assunto, status, prioridade, data_criacao, resposta_admin
                FROM tickets_suporte 
@@ -669,7 +675,7 @@ def listar_meus_tickets(usuario_id):
 def listar_todos_tickets_admin():
     """Lista todos os tickets para o Admin com ordenação por prioridade"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         df = pd.read_sql_query(
             '''SELECT id, usuario_id, usuario_login, usuario_email, tipo_problema, assunto, 
                       descricao, status, prioridade, data_criacao, data_resposta, resposta_admin
@@ -691,7 +697,7 @@ def listar_todos_tickets_admin():
 def responder_ticket(ticket_id, resposta_admin, admin_id):
     """Responde um ticket (apenas Admin)"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('''
@@ -712,7 +718,7 @@ def responder_ticket(ticket_id, resposta_admin, admin_id):
 def fechar_ticket(ticket_id, admin_id):
     """Fecha um ticket (apenas Admin)"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('''
@@ -733,7 +739,7 @@ def fechar_ticket(ticket_id, admin_id):
 def obter_estatisticas_tickets():
     """Obtém estatísticas de tickets"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('SELECT COUNT(*) FROM tickets_suporte')
@@ -770,7 +776,7 @@ def obter_estatisticas_tickets():
 def validar_usuario_subordinado(gerente_id, usuario_id):
     """Valida se o usuário é subordinado do gerente"""
     try:
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('SELECT gerente_id FROM usuarios_finais WHERE id = ?', (int(usuario_id),))
@@ -796,7 +802,7 @@ def bloquear_usuario_subordinado(gerente_id, usuario_id):
     
     try:
         usuario_id = int(usuario_id)
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('SELECT login FROM usuarios_finais WHERE id = ?', (usuario_id,))
@@ -823,7 +829,7 @@ def desbloquear_usuario_subordinado(gerente_id, usuario_id):
     
     try:
         usuario_id = int(usuario_id)
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         c.execute('SELECT login FROM usuarios_finais WHERE id = ?', (usuario_id,))
@@ -1665,7 +1671,7 @@ def app_painel_gerente():
                 elif len(senha) < 6:
                     st.error("❌ Senha com mínimo 6 caracteres!")
                 else:
-                    conn = sqlite3.connect('auditoria_multi_tenant.db')
+                    conn = sqlite3.connect(DB_PATH)
                     c = conn.cursor()
                     
                     c.execute('SELECT id FROM usuarios_finais WHERE login = ?', (login,))
@@ -1694,7 +1700,7 @@ def app_painel_gerente():
     
     with tab2:
         st.subheader("Meus Usuários")
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''
         SELECT id, login, nome, email, perfil, criado_em, ativo
@@ -1723,7 +1729,7 @@ def app_painel_gerente():
             confirmar_senha = st.text_input("Confirmar", type="password")
             
             if st.form_submit_button("Alterar", use_container_width=True):
-                conn = sqlite3.connect('auditoria_multi_tenant.db')
+                conn = sqlite3.connect(DB_PATH)
                 c = conn.cursor()
                 
                 senha_atual_hash = hashlib.sha256(senha_atual.encode()).hexdigest()
@@ -1751,7 +1757,7 @@ def app_painel_gerente():
     with tab4:
         st.subheader("🔄 Bloquear/Desbloquear Usuários Subordinados")
         
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         df_usuarios = pd.read_sql_query(
             "SELECT id, login, nome, ativo FROM usuarios_finais WHERE gerente_id = ? ORDER BY login",
             conn, params=(st.session_state.usuario_id,))
@@ -1800,7 +1806,7 @@ def app_painel_gerente():
         st.subheader("🔐 Alterar Senha de Subordinado")
         st.info("💡 Permissão para redefinir senhas de usuários bloqueados ou que esqueceram a senha")
         
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         df_usuarios = pd.read_sql_query(
             "SELECT id, login, nome, ativo FROM usuarios_finais WHERE gerente_id = ? ORDER BY login",
             conn, params=(st.session_state.usuario_id,))
@@ -1831,7 +1837,7 @@ def app_painel_gerente():
                         try:
                             nova_senha_hash = hashlib.sha256(nova_senha.encode()).hexdigest()
                             
-                            conn = sqlite3.connect('auditoria_multi_tenant.db')
+                            conn = sqlite3.connect(DB_PATH)
                             c = conn.cursor()
                             c.execute('UPDATE usuarios_finais SET senha_hash = ? WHERE id = ?', 
                                      (nova_senha_hash, usuario_id))
@@ -1877,7 +1883,7 @@ def app_painel_admin():
                 if not all([login, senha, cnpj_cpf, nome_empresa]):
                     st.error("❌ Campos obrigatórios!")
                 else:
-                    conn = sqlite3.connect('auditoria_multi_tenant.db')
+                    conn = sqlite3.connect(DB_PATH)
                     c = conn.cursor()
                     
                     c.execute('SELECT id FROM gerentes WHERE cnpj_cpf = ?', (cnpj_cpf,))
@@ -1903,7 +1909,7 @@ def app_painel_admin():
         
         st.divider()
         st.subheader("Gerentes Cadastrados")
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         df_gerentes = pd.read_sql_query(
             "SELECT id, login, cnpj_cpf, nome_empresa, email, criado_em, ativo FROM gerentes ORDER BY criado_em DESC",
             conn
@@ -1920,7 +1926,7 @@ def app_painel_admin():
         
         filtro_status = st.selectbox("Filtro:", ["Todos", "Ativos", "Bloqueados"], key="filtro_usuarios")
         
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         
         if filtro_status == "Todos":
             df_usuarios = pd.read_sql_query(
@@ -1949,7 +1955,7 @@ def app_painel_admin():
         st.subheader("Alterar Senha")
         
         tipo_alvo = st.radio("Tipo:", ["Gerente", "Usuário Final"], key="tipo_senha")
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         
         if tipo_alvo == "Gerente":
             df_gerentes = pd.read_sql_query("SELECT id, login, nome_empresa FROM gerentes", conn)
@@ -2014,7 +2020,7 @@ def app_painel_admin():
         tipo_bloqueio = st.radio("Tipo:", ["Gerente", "Usuário Final"], key="tipo_bloqueio")
         
         if tipo_bloqueio == "Gerente":
-            conn = sqlite3.connect('auditoria_multi_tenant.db')
+            conn = sqlite3.connect(DB_PATH)
             df_gerentes = pd.read_sql_query(
                 "SELECT id, login, nome_empresa, ativo FROM gerentes ORDER BY login", conn)
             conn.close()
@@ -2035,7 +2041,7 @@ def app_painel_admin():
                 with col1:
                     if st.button("🔒 Bloquear", use_container_width=True, key=f"bloq_gerente_{usuario_id}"):
                         if ativo == 1:
-                            conn = sqlite3.connect('auditoria_multi_tenant.db')
+                            conn = sqlite3.connect(DB_PATH)
                             c = conn.cursor()
                             c.execute('UPDATE gerentes SET ativo = 0 WHERE id = ?', (usuario_id,))
                             conn.commit()
@@ -2050,7 +2056,7 @@ def app_painel_admin():
                 with col2:
                     if st.button("🔓 Desbloquear", use_container_width=True, key=f"debloq_gerente_{usuario_id}"):
                         if ativo == 0:
-                            conn = sqlite3.connect('auditoria_multi_tenant.db')
+                            conn = sqlite3.connect(DB_PATH)
                             c = conn.cursor()
                             c.execute('UPDATE gerentes SET ativo = 1 WHERE id = ?', (usuario_id,))
                             conn.commit()
@@ -2063,7 +2069,7 @@ def app_painel_admin():
                             st.warning("⚠️ Já está desbloqueado!")
         
         else:
-            conn = sqlite3.connect('auditoria_multi_tenant.db')
+            conn = sqlite3.connect(DB_PATH)
             df_usuarios = pd.read_sql_query(
                 "SELECT id, login, nome, ativo FROM usuarios_finais ORDER BY login", conn)
             conn.close()
@@ -2084,7 +2090,7 @@ def app_painel_admin():
                 with col1:
                     if st.button("🔒 Bloquear", use_container_width=True, key=f"bloq_usuario_{usuario_id}"):
                         if ativo == 1:
-                            conn = sqlite3.connect('auditoria_multi_tenant.db')
+                            conn = sqlite3.connect(DB_PATH)
                             c = conn.cursor()
                             c.execute('UPDATE usuarios_finais SET ativo = 0 WHERE id = ?', (usuario_id,))
                             conn.commit()
@@ -2099,7 +2105,7 @@ def app_painel_admin():
                 with col2:
                     if st.button("🔓 Desbloquear", use_container_width=True, key=f"debloq_usuario_{usuario_id}"):
                         if ativo == 0:
-                            conn = sqlite3.connect('auditoria_multi_tenant.db')
+                            conn = sqlite3.connect(DB_PATH)
                             c = conn.cursor()
                             c.execute('UPDATE usuarios_finais SET ativo = 1 WHERE id = ?', (usuario_id,))
                             conn.commit()
@@ -2118,7 +2124,7 @@ def app_painel_admin():
         tipo_excluir = st.radio("Tipo:", ["Gerente", "Usuário Final"], key="tipo_excluir")
         
         if tipo_excluir == "Gerente":
-            conn = sqlite3.connect('auditoria_multi_tenant.db')
+            conn = sqlite3.connect(DB_PATH)
             df_gerentes = pd.read_sql_query("SELECT id, login, nome_empresa FROM gerentes ORDER BY login", conn)
             conn.close()
             
@@ -2138,7 +2144,7 @@ def app_painel_admin():
                 
                 if st.button("🗑️ EXCLUIR PERMANENTEMENTE", use_container_width=True, key=f"exec_excluir_gerente_{usuario_id}"):
                     if conf == login:
-                        conn = sqlite3.connect('auditoria_multi_tenant.db')
+                        conn = sqlite3.connect(DB_PATH)
                         c = conn.cursor()
                         c.execute('DELETE FROM usuarios_finais WHERE gerente_id = ?', (usuario_id,))
                         c.execute('DELETE FROM gerentes WHERE id = ?', (usuario_id,))
@@ -2153,7 +2159,7 @@ def app_painel_admin():
                         st.error("❌ Confirmação incorreta!")
         
         else:
-            conn = sqlite3.connect('auditoria_multi_tenant.db')
+            conn = sqlite3.connect(DB_PATH)
             df_usuarios = pd.read_sql_query("SELECT id, login, nome FROM usuarios_finais ORDER BY login", conn)
             conn.close()
             
@@ -2173,7 +2179,7 @@ def app_painel_admin():
                 
                 if st.button("🗑️ EXCLUIR PERMANENTEMENTE", use_container_width=True, key=f"exec_excluir_usuario_{usuario_id}"):
                     if conf == login:
-                        conn = sqlite3.connect('auditoria_multi_tenant.db')
+                        conn = sqlite3.connect(DB_PATH)
                         c = conn.cursor()
                         c.execute('DELETE FROM usuarios_finais WHERE id = ?', (usuario_id,))
                         conn.commit()
@@ -2208,7 +2214,7 @@ def app_painel_admin():
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        conn = sqlite3.connect('auditoria_multi_tenant.db')
+                        conn = sqlite3.connect(DB_PATH)
                         c = conn.cursor()
                         c.execute('''
                         SELECT id, login, cnpj_cpf, nome_empresa 
@@ -2234,7 +2240,7 @@ def app_painel_admin():
                     
                     with col2:
                         if gerente_id:
-                            conn = sqlite3.connect('auditoria_multi_tenant.db')
+                            conn = sqlite3.connect(DB_PATH)
                             c = conn.cursor()
                             c.execute('''
                             SELECT id, login, cnpj_cpf, nome 
@@ -2543,7 +2549,7 @@ def app_painel_admin():
     
     with tab7:
         st.subheader("🛡️ Logs (Últimos 100)")
-        conn = sqlite3.connect('auditoria_multi_tenant.db')
+        conn = sqlite3.connect(DB_PATH)
         df_logs = pd.read_sql_query(
             "SELECT data_hora, usuario_id, tipo_usuario, cnpj_cpf, acao, dados_novos FROM logs_auditoria ORDER BY id DESC LIMIT 100",
             conn
@@ -2615,7 +2621,7 @@ def app_painel_suporte_usuario():
                     st.error("❌ Preencha todos os campos obrigatórios!")
                 else:
                     # Obter e-mail do usuário
-                    conn = sqlite3.connect('auditoria_multi_tenant.db')
+                    conn = sqlite3.connect(DB_PATH)
                     c = conn.cursor()
                     c.execute('SELECT email FROM usuarios_finais WHERE id = ?', (st.session_state.usuario_id,))
                     resultado = c.fetchone()
