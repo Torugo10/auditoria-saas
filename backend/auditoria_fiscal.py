@@ -201,17 +201,25 @@ def _ensure_db_initialized():
 # 🔐 FUNÇÕES DE AUTENTICAÇÃO
 # 
 
+import psycopg2
+import os
+
 def autenticar_usuario(login, senha):
-    """Autenticação com validação de bloqueio"""
-    conn = sqlite3.connect(DB_PATH)
+    """Autenticação com validação de bloqueio - PostgreSQL"""
+    
+    # ✅ CORRETO: Usar PostgreSQL
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    conn = psycopg2.connect(DATABASE_URL)
     c = conn.cursor()
     
     senha_hash = hashlib.sha256(senha.encode()).hexdigest()
     
     # Admin
-    c.execute('SELECT id, ativo FROM administradores WHERE login = ? AND senha_hash = ?', 
-             (login, senha_hash))
+    c.execute('SELECT id, ativo FROM administradores WHERE login = %s AND senha_hash = %s',
+             (login, senha_hash))  # ✅ Sintaxe PostgreSQL
+    
     admin = c.fetchone()
+    
     if admin:
         usuario_id, ativo = admin
         if not ativo:
@@ -222,9 +230,11 @@ def autenticar_usuario(login, senha):
         return {'usuario_id': usuario_id, 'tipo': 'admin', 'login': login, 'cnpj_cpf': None}
     
     # Gerente
-    c.execute('SELECT id, cnpj_cpf, ativo FROM gerentes WHERE login = ? AND senha_hash = ?', 
+    c.execute('SELECT id, cnpj_cpf, ativo FROM gerentes WHERE login = %s AND senha_hash = %s',
              (login, senha_hash))
+    
     gerente = c.fetchone()
+    
     if gerente:
         usuario_id, cnpj_cpf, ativo = gerente
         if not ativo:
@@ -235,9 +245,11 @@ def autenticar_usuario(login, senha):
         return {'usuario_id': usuario_id, 'tipo': 'gerente', 'login': login, 'cnpj_cpf': cnpj_cpf}
     
     # Usuário Final
-    c.execute('SELECT id, cnpj_cpf, perfil, ativo FROM usuarios_finais WHERE login = ? AND senha_hash = ?', 
+    c.execute('SELECT id, cnpj_cpf, perfil, ativo FROM usuarios_finais WHERE login = %s AND senha_hash = %s',
              (login, senha_hash))
+    
     usuario = c.fetchone()
+    
     if usuario:
         usuario_id, cnpj_cpf, perfil, ativo = usuario
         if not ativo:
@@ -245,7 +257,7 @@ def autenticar_usuario(login, senha):
             registrar_log(0, 'desconhecido', '', 'LOGIN_BLOQUEADO', f'Tentativa: {login}')
             return None
         conn.close()
-        return {'usuario_id': usuario_id, 'tipo': 'usuario_final', 'login': login, 
+        return {'usuario_id': usuario_id, 'tipo': 'usuario_final', 'login': login,
                'cnpj_cpf': cnpj_cpf, 'perfil': perfil}
     
     conn.close()
