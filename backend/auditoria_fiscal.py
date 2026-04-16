@@ -264,22 +264,23 @@ def autenticar_usuario(login, senha):
     return None
 
 def validar_sessao_ativa_forcada():
-    """Validação CRÍTICA: Executa SEMPRE"""
+    """Validação CRÍTICA: Executa SEMPRE - PostgreSQL"""
     if not st.session_state.autenticado:
         return False
     
     try:
-        conn = sqlite3.connect(DB_PATH)
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
         c = conn.cursor()
         
         if st.session_state.tipo_usuario == 'admin':
-            c.execute('SELECT ativo FROM administradores WHERE id = ? AND login = ?', 
+            c.execute('SELECT ativo FROM administradores WHERE id = %s AND login = %s', 
                      (st.session_state.usuario_id, st.session_state.usuario))
         elif st.session_state.tipo_usuario == 'gerente':
-            c.execute('SELECT ativo FROM gerentes WHERE id = ? AND login = ?', 
+            c.execute('SELECT ativo FROM gerentes WHERE id = %s AND login = %s', 
                      (st.session_state.usuario_id, st.session_state.usuario))
         else:
-            c.execute('SELECT ativo FROM usuarios_finais WHERE id = ? AND login = ?', 
+            c.execute('SELECT ativo FROM usuarios_finais WHERE id = %s AND login = %s', 
                      (st.session_state.usuario_id, st.session_state.usuario))
         
         resultado = c.fetchone()
@@ -294,6 +295,11 @@ def validar_sessao_ativa_forcada():
             
             st.error("❌ ACESSO BLOQUEADO: Sua conta foi inativada.")
             st.stop()
+        
+        return True
+    except Exception as e:
+        st.session_state.autenticado = False
+        st.stop()
         
         return True
     except Exception as e:
