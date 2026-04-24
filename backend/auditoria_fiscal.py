@@ -8,11 +8,9 @@
 import sys
 print("✅ Module loading started", file=sys.stderr, flush=True)
 
-import os
 import streamlit as st
 import pandas as pd
 import numpy as np
-import sqlite3
 import hashlib
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -21,6 +19,16 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import plotly.express as px
 import plotly.graph_objects as go
 
+from backend.core.settings import get_settings
+from backend.db.connection import connect_db, ensure_sqlite_directory, read_sql_query
+from backend.modules.usuarios import (
+    apply_authenticated_user,
+    authenticate_user,
+    clear_authenticated_user,
+    initialize_user_session,
+    validate_active_session,
+)
+
 # 
 # 🔐 CONFIGURAÇÃO INICIAL
 # 
@@ -28,17 +36,22 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Auditoria Contábil Pro", layout="wide", page_icon="📊")
 print("✅ Streamlit configured", file=sys.stderr, flush=True)
 
-# Database path configuration for Railway
-DB_PATH = os.getenv('DATABASE_PATH', '/tmp/auditoria_multi_tenant.db')
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+settings = get_settings()
+DB_PATH = settings.database_path
+DATABASE_URL = settings.database_url
+ensure_sqlite_directory(DB_PATH)
+initialize_user_session(st.session_state)
 
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-    st.session_state.usuario = None
-    st.session_state.tipo_usuario = None
-    st.session_state.cnpj_cpf = None
-    st.session_state.perfil = None
-    st.session_state.usuario_id = None
+
+class _DatabaseAdapter:
+    """Mantem compatibilidade com chamadas legadas a sqlite3.connect(...)."""
+
+    @staticmethod
+    def connect(_database_path=None):
+        return connect_db(settings=settings)
+
+
+sqlite3 = _DatabaseAdapter()
 
 # 
 # 🗄️ INICIALIZAÇÃO DO BANCO DE DADOS
@@ -197,113 +210,38 @@ def _ensure_db_initialized():
     print("✅ [DB] Banco de dados inicializado com sucesso.", file=sys.stderr, flush=True)
     _db_initialized = True
 
-# 
-# 🔐 FUNÇÕES DE AUTENTICAÇÃO
-# 
-
-import psycopg2
-import os
-
 def autenticar_usuario(login, senha):
-    """Autenticação com validação de bloqueio - PostgreSQL"""
-    
-    # ✅ CORRETO: Usar PostgreSQL
-    DATABASE_URL = os.getenv('DATABASE_URL')
-    conn = psycopg2.connect(DATABASE_URL)
-    c = conn.cursor()
-    
-    senha_hash = hashlib.sha256(senha.encode()).hexdigest()
-    
-    # Admin
-    c.execute('SELECT id, ativo FROM administradores WHERE login = %s AND senha_hash = %s',
-             (login, senha_hash))  # ✅ Sintaxe PostgreSQL
-    
-    admin = c.fetchone()
-    
-    if admin:
-        usuario_id, ativo = admin
-        if not ativo:
-            conn.close()
-            registrar_log(0, 'desconhecido', '', 'LOGIN_BLOQUEADO', f'Tentativa: {login}')
-            return None
-        conn.close()
-        return {'usuario_id': usuario_id, 'tipo': 'admin', 'login': login, 'cnpj_cpf': None}
-    
-    # Gerente
-    c.execute('SELECT id, cnpj_cpf, ativo FROM gerentes WHERE login = %s AND senha_hash = %s',
-             (login, senha_hash))
-    
-    gerente = c.fetchone()
-    
-    if gerente:
-        usuario_id, cnpj_cpf, ativo = gerente
-        if not ativo:
-            conn.close()
-            registrar_log(0, 'desconhecido', '', 'LOGIN_BLOQUEADO', f'Tentativa: {login}')
-            return None
-        conn.close()
-        return {'usuario_id': usuario_id, 'tipo': 'gerente', 'login': login, 'cnpj_cpf': cnpj_cpf}
-    
-    # Usuário Final
-    c.execute('SELECT id, cnpj_cpf, perfil, ativo FROM usuarios_finais WHERE login = %s AND senha_hash = %s',
-             (login, senha_hash))
-    
-    usuario = c.fetchone()
-    
-    if usuario:
-        usuario_id, cnpj_cpf, perfil, ativo = usuario
-        if not ativo:
-            conn.close()
-            registrar_log(0, 'desconhecido', '', 'LOGIN_BLOQUEADO', f'Tentativa: {login}')
-            return None
-        conn.close()
-        return {'usuario_id': usuario_id, 'tipo': 'usuario_final', 'login': login,
-               'cnpj_cpf': cnpj_cpf, 'perfil': perfil}
-    
-    conn.close()
-    return None
+    """Camada de compatibilidade para o dominio de usuarios."""
+    return authenticate_user(
+        login=login,
+        senha=senha,
+        database_url=DATABASE_URL,
+        database_path=DB_PATH,
+        log_callback=registrar_log,
+    )
 
 def validar_sessao_ativa_forcada():
-    """Validação CRÍTICA: Executa SEMPRE - PostgreSQL"""
+    """Validação CRÍTICA: executa via dominio de usuarios."""
     if not st.session_state.autenticado:
         return False
-    
+
     try:
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
-        c = conn.cursor()
-        
-        if st.session_state.tipo_usuario == 'admin':
-            c.execute('SELECT ativo FROM administradores WHERE id = %s AND login = %s', 
-                     (st.session_state.usuario_id, st.session_state.usuario))
-        elif st.session_state.tipo_usuario == 'gerente':
-            c.execute('SELECT ativo FROM gerentes WHERE id = %s AND login = %s', 
-                     (st.session_state.usuario_id, st.session_state.usuario))
-        else:
-            c.execute('SELECT ativo FROM usuarios_finais WHERE id = %s AND login = %s', 
-                     (st.session_state.usuario_id, st.session_state.usuario))
-        
-        resultado = c.fetchone()
-        conn.close()
-        
-        if not resultado or resultado[0] == 0:
-            st.session_state.autenticado = False
-            st.session_state.usuario = None
-            st.session_state.tipo_usuario = None
-            st.session_state.cnpj_cpf = None
-            st.session_state.usuario_id = None
-            
+        sessao_ativa = validate_active_session(
+            database_url=DATABASE_URL,
+            database_path=DB_PATH,
+            usuario_id=st.session_state.usuario_id,
+            tipo_usuario=st.session_state.tipo_usuario,
+            login=st.session_state.usuario,
+        )
+
+        if not sessao_ativa:
+            clear_authenticated_user(st.session_state)
             st.error("❌ ACESSO BLOQUEADO: Sua conta foi inativada.")
             st.stop()
-        
+
         return True
-    except Exception as e:
-        st.session_state.autenticado = False
-        st.stop()
-        
-        return True
-    except Exception as e:
-        st.session_state.autenticado = False
+    except Exception:
+        clear_authenticated_user(st.session_state)
         st.stop()
 
 def bloquear_usuarios_atrasados():
@@ -463,14 +401,14 @@ def listar_contas_recorrentes(gerente_id=None, admin_id=None):
         conn = sqlite3.connect(DB_PATH)
         
         if gerente_id:
-            df = pd.read_sql_query(
+            df = read_sql_query(
                 '''SELECT id, login_usuario, valor_fixo, dia_vencimento, descricao, ativa
                    FROM contas_recorrentes 
                    WHERE gerente_id = ? AND ativa = 1
                    ORDER BY login_usuario''',
                 conn, params=(gerente_id,))
         elif admin_id:
-            df = pd.read_sql_query(
+            df = read_sql_query(
                 '''SELECT id, login_usuario, valor_fixo, dia_vencimento, 
                    descricao, gerente_id, cnpj_cpf_gerente, ativa
                    FROM contas_recorrentes 
@@ -687,7 +625,7 @@ def listar_meus_tickets(usuario_id):
     """Lista todos os tickets do usuário"""
     try:
         conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query(
+        df = read_sql_query(
             '''SELECT id, tipo_problema, assunto, status, prioridade, data_criacao, resposta_admin
                FROM tickets_suporte 
                WHERE usuario_id = ? 
@@ -702,7 +640,7 @@ def listar_todos_tickets_admin():
     """Lista todos os tickets para o Admin com ordenação por prioridade"""
     try:
         conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql_query(
+        df = read_sql_query(
             '''SELECT id, usuario_id, usuario_login, usuario_email, tipo_problema, assunto, 
                       descricao, status, prioridade, data_criacao, data_resposta, resposta_admin
                FROM tickets_suporte 
@@ -894,17 +832,11 @@ try:
                     _ensure_db_initialized()
                     resultado = autenticar_usuario(usuario, senha)
                     if resultado:
-                        st.session_state.autenticado = True
-                        st.session_state.usuario = resultado['login']
-                        st.session_state.tipo_usuario = resultado['tipo']
-                        st.session_state.cnpj_cpf = resultado['cnpj_cpf']
-                        st.session_state.perfil = resultado.get('perfil', None)
-                        st.session_state.usuario_id = resultado['usuario_id']
-                        
+                        apply_authenticated_user(st.session_state, resultado)
                         registrar_log(
-                            usuario_id=resultado['usuario_id'],
-                            tipo_usuario=resultado['tipo'],
-                            cnpj_cpf=resultado['cnpj_cpf'] if resultado['cnpj_cpf'] else '',
+                            usuario_id=resultado.usuario_id,
+                            tipo_usuario=resultado.tipo,
+                            cnpj_cpf=resultado.cnpj_cpf if resultado.cnpj_cpf else '',
                             acao='LOGIN_SUCESSO'
                         )
                         
@@ -1799,7 +1731,7 @@ def app_painel_gerente():
         st.subheader("🔄 Bloquear/Desbloquear Usuários Subordinados")
         
         conn = sqlite3.connect(DB_PATH)
-        df_usuarios = pd.read_sql_query(
+        df_usuarios = read_sql_query(
             "SELECT id, login, nome, ativo FROM usuarios_finais WHERE gerente_id = ? ORDER BY login",
             conn, params=(st.session_state.usuario_id,))
         conn.close()
@@ -1848,7 +1780,7 @@ def app_painel_gerente():
         st.info("💡 Permissão para redefinir senhas de usuários bloqueados ou que esqueceram a senha")
         
         conn = sqlite3.connect(DB_PATH)
-        df_usuarios = pd.read_sql_query(
+        df_usuarios = read_sql_query(
             "SELECT id, login, nome, ativo FROM usuarios_finais WHERE gerente_id = ? ORDER BY login",
             conn, params=(st.session_state.usuario_id,))
         conn.close()
@@ -1951,7 +1883,7 @@ def app_painel_admin():
         st.divider()
         st.subheader("Gerentes Cadastrados")
         conn = sqlite3.connect(DB_PATH)
-        df_gerentes = pd.read_sql_query(
+        df_gerentes = read_sql_query(
             "SELECT id, login, cnpj_cpf, nome_empresa, email, criado_em, ativo FROM gerentes ORDER BY criado_em DESC",
             conn
         )
@@ -1970,17 +1902,17 @@ def app_painel_admin():
         conn = sqlite3.connect(DB_PATH)
         
         if filtro_status == "Todos":
-            df_usuarios = pd.read_sql_query(
+            df_usuarios = read_sql_query(
                 "SELECT id, login, cnpj_cpf, nome, perfil, criado_em, ativo FROM usuarios_finais ORDER BY criado_em DESC",
                 conn
             )
         elif filtro_status == "Ativos":
-            df_usuarios = pd.read_sql_query(
+            df_usuarios = read_sql_query(
                 "SELECT id, login, cnpj_cpf, nome, perfil, criado_em, ativo FROM usuarios_finais WHERE ativo = 1 ORDER BY criado_em DESC",
                 conn
             )
         else:
-            df_usuarios = pd.read_sql_query(
+            df_usuarios = read_sql_query(
                 "SELECT id, login, cnpj_cpf, nome, perfil, criado_em, ativo FROM usuarios_finais WHERE ativo = 0 ORDER BY criado_em DESC",
                 conn
             )
@@ -1999,7 +1931,7 @@ def app_painel_admin():
         conn = sqlite3.connect(DB_PATH)
         
         if tipo_alvo == "Gerente":
-            df_gerentes = pd.read_sql_query("SELECT id, login, nome_empresa FROM gerentes", conn)
+            df_gerentes = read_sql_query("SELECT id, login, nome_empresa FROM gerentes", conn)
             
             if not df_gerentes.empty:
                 usuario = st.selectbox("Selecione:", 
@@ -2026,7 +1958,7 @@ def app_painel_admin():
                             registrar_log(st.session_state.usuario_id, 'admin', '', 'SENHA_ALTERADA',
                                         f"Senha de gerente ID {usuario_id}")
         else:
-            df_usuarios = pd.read_sql_query("SELECT id, login, nome FROM usuarios_finais", conn)
+            df_usuarios = read_sql_query("SELECT id, login, nome FROM usuarios_finais", conn)
             
             if not df_usuarios.empty:
                 usuario = st.selectbox("Selecione:",
@@ -2062,7 +1994,7 @@ def app_painel_admin():
         
         if tipo_bloqueio == "Gerente":
             conn = sqlite3.connect(DB_PATH)
-            df_gerentes = pd.read_sql_query(
+            df_gerentes = read_sql_query(
                 "SELECT id, login, nome_empresa, ativo FROM gerentes ORDER BY login", conn)
             conn.close()
             
@@ -2111,7 +2043,7 @@ def app_painel_admin():
         
         else:
             conn = sqlite3.connect(DB_PATH)
-            df_usuarios = pd.read_sql_query(
+            df_usuarios = read_sql_query(
                 "SELECT id, login, nome, ativo FROM usuarios_finais ORDER BY login", conn)
             conn.close()
             
@@ -2166,7 +2098,7 @@ def app_painel_admin():
         
         if tipo_excluir == "Gerente":
             conn = sqlite3.connect(DB_PATH)
-            df_gerentes = pd.read_sql_query("SELECT id, login, nome_empresa FROM gerentes ORDER BY login", conn)
+            df_gerentes = read_sql_query("SELECT id, login, nome_empresa FROM gerentes ORDER BY login", conn)
             conn.close()
             
             if not df_gerentes.empty:
@@ -2201,7 +2133,7 @@ def app_painel_admin():
         
         else:
             conn = sqlite3.connect(DB_PATH)
-            df_usuarios = pd.read_sql_query("SELECT id, login, nome FROM usuarios_finais ORDER BY login", conn)
+            df_usuarios = read_sql_query("SELECT id, login, nome FROM usuarios_finais ORDER BY login", conn)
             conn.close()
             
             if not df_usuarios.empty:
@@ -2591,7 +2523,7 @@ def app_painel_admin():
     with tab7:
         st.subheader("🛡️ Logs (Últimos 100)")
         conn = sqlite3.connect(DB_PATH)
-        df_logs = pd.read_sql_query(
+        df_logs = read_sql_query(
             "SELECT data_hora, usuario_id, tipo_usuario, cnpj_cpf, acao, dados_novos FROM logs_auditoria ORDER BY id DESC LIMIT 100",
             conn
         )
@@ -2767,11 +2699,7 @@ try:
     if st.sidebar.button("🚪 Logout", use_container_width=True):
         registrar_log(st.session_state.usuario_id, st.session_state.tipo_usuario, 
                      st.session_state.cnpj_cpf if st.session_state.cnpj_cpf else '', 'LOGOUT')
-        st.session_state.autenticado = False
-        st.session_state.usuario = None
-        st.session_state.tipo_usuario = None
-        st.session_state.cnpj_cpf = None
-        st.session_state.usuario_id = None
+        clear_authenticated_user(st.session_state)
         
 
     st.sidebar.caption("🔒 Protegido")
