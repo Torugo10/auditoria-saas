@@ -87,6 +87,70 @@ class PostgresCompatConnection:
         return getattr(self.raw_connection, item)
 
 
+class SQLiteCompatCursor:
+    """Cursor SQLite com suporte aos poucos comandos PostgreSQL usados no app."""
+
+    def __init__(self, raw_cursor):
+        self._raw_cursor = raw_cursor
+        self.lastrowid = None
+
+    def execute(self, query: str, params=None):
+        normalized_query, normalized_params, should_skip = normalize_query_for_sqlite(
+            query,
+            params,
+            self._raw_cursor,
+        )
+        if should_skip:
+            return self
+
+        if normalized_params is None:
+            self._raw_cursor.execute(normalized_query)
+        else:
+            self._raw_cursor.execute(normalized_query, normalized_params)
+
+        self.lastrowid = self._raw_cursor.lastrowid
+        return self
+
+    def fetchone(self):
+        return self._raw_cursor.fetchone()
+
+    def fetchall(self):
+        return self._raw_cursor.fetchall()
+
+    def close(self) -> None:
+        self._raw_cursor.close()
+
+    @property
+    def description(self):
+        return self._raw_cursor.description
+
+    def __getattr__(self, item):
+        return getattr(self._raw_cursor, item)
+
+
+class SQLiteCompatConnection:
+    """Conexao SQLite com a mesma superficie usada pelo monolito."""
+
+    def __init__(self, raw_connection):
+        self.raw_connection = raw_connection
+        self.backend = SQLITE
+
+    def cursor(self) -> SQLiteCompatCursor:
+        return SQLiteCompatCursor(self.raw_connection.cursor())
+
+    def commit(self) -> None:
+        self.raw_connection.commit()
+
+    def rollback(self) -> None:
+        self.raw_connection.rollback()
+
+    def close(self) -> None:
+        self.raw_connection.close()
+
+    def __getattr__(self, item):
+        return getattr(self.raw_connection, item)
+
+
 def ensure_sqlite_directory(database_path: str) -> None:
     """Garante que o diretorio do arquivo SQLite exista."""
     db_dir = Path(database_path).expanduser().resolve().parent
@@ -96,7 +160,7 @@ def ensure_sqlite_directory(database_path: str) -> None:
 def get_sqlite_connection(database_path: str) -> sqlite3.Connection:
     """Abre conexao SQLite com o caminho informado."""
     ensure_sqlite_directory(database_path)
-    return sqlite3.connect(database_path)
+    return SQLiteCompatConnection(sqlite3.connect(database_path))
 
 
 def get_postgres_connection(database_url: str):
@@ -177,3 +241,35 @@ def normalize_query_for_postgres(query: str, params=None):
     normalized_query = normalized_query.replace("?", "%s")
 
     return normalized_query, normalized_params
+
+
+def normalize_query_for_sqlite(query: str, params=None, cursor=None):
+    """Converte pequenos trechos PostgreSQL para SQLite quando necessario."""
+    normalized_query = query
+    normalized_params = params
+
+    alter_match = re.match(
+        r"\s*ALTER\s+TABLE\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+?)\s*$",
+        normalized_query,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if alter_match:
+        table_name, column_name, column_definition = alter_match.groups()
+        if cursor is not None and _sqlite_column_exists(cursor, table_name, column_name):
+            return normalized_query, normalized_params, True
+
+        normalized_query = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+
+    normalized_query = re.sub(
+        r"\bSERIAL\s+PRIMARY\s+KEY\b",
+        "INTEGER PRIMARY KEY AUTOINCREMENT",
+        normalized_query,
+        flags=re.IGNORECASE,
+    )
+
+    return normalized_query, normalized_params, False
+
+
+def _sqlite_column_exists(cursor, table_name: str, column_name: str) -> bool:
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    return any(row[1] == column_name for row in cursor.fetchall())
